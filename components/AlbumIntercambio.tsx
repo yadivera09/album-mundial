@@ -17,7 +17,6 @@ const nombreDisplay: Record<string, string> = {
 	"CAN": "Canadá",
 	"SUI": "Suiza",
 	"QAT": "Catar",
-	"ITA": "Italia",
 	"BRA": "Brasil",
 	"MAR": "Marruecos",
 	"HAI": "Haití",
@@ -50,7 +49,6 @@ const nombreDisplay: Record<string, string> = {
 	"ALG": "Argelia",
 	"AUT": "Austria",
 	"JOR": "Jordania",
-	"BUL": "Bulgaria",
 	"POR": "Portugal",
 	"COD": "Congo (RD)",
 	"UZB": "Uzbekistán",
@@ -71,7 +69,6 @@ const nombresPaises: Record<string, string[]> = {
 	"CAN": ["CANADA", "CANADÁ"],
 	"SUI": ["SWITZERLAND", "SUIZA"],
 	"QAT": ["QATAR", "CATAR"],
-	"ITA": ["ITALY", "ITALIA"],
 	"BRA": ["BRAZIL", "BRASIL"],
 	"MAR": ["MOROCCO", "MARRUECOS"],
 	"HAI": ["HAITI", "HAITÍ"],
@@ -104,7 +101,6 @@ const nombresPaises: Record<string, string[]> = {
 	"ALG": ["ALGERIA", "ARGELIA"],
 	"AUT": ["AUSTRIA"],
 	"JOR": ["JORDAN", "JORDANIA"],
-	"BUL": ["BULGARIA"],
 	"POR": ["PORTUGAL"],
 	"COD": ["DR CONGO", "CONGO", "REPÚBLICA DEMOCRÁTICA DEL CONGO"],
 	"UZB": ["UZBEKISTAN", "UZBEKISTÁN"],
@@ -150,6 +146,9 @@ export default function AlbumIntercambio() {
 					merged[pais] = nums;
 				}
 			}
+			// Eliminar países que no van al Mundial (ITA, BUL)
+			delete merged['ITA'];
+			delete merged['BUL'];
 			setFaltantes(merged);
 			localStorage.setItem('faltantes', JSON.stringify(merged));
 		} else {
@@ -296,7 +295,7 @@ export default function AlbumIntercambio() {
 					📋 Álbum Mundial - Intercambio
 				</h1>
 				<p className="text-center text-gray-600 mb-8">
-					Tengo: {totalTengo} | Faltantes: {faltantesActuales} | Repetidos: {repetidos.length}
+					Total álbum: 980 | Tengo: {totalTengo} | Faltantes: {faltantesActuales} | Repetidos: {repetidos.length}
 				</p>
 
 				{/* Buscador rápido de repetidos */}
