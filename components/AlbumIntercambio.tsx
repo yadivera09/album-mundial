@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { misRepetidosIniciales, misFaltantes as misFaltantesIniciales, Sticker } from '@/data/stickers';
 
+const TOTAL_POR_PAIS = 20;
+
 const normalize = (str: string) =>
 	str.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
 
@@ -120,25 +122,39 @@ export default function AlbumIntercambio() {
 	const [busqueda, setBusqueda] = useState('');
 	const [resultadosBusqueda, setResultadosBusqueda] = useState<Sticker[]>([]);
 	const [hasBuscado, setHasBuscado] = useState(false);
-	const [paisSeleccionado, setPaisSeleccionado] = useState<string>('');
+
+	// Sección faltantes
+	const [paisSeleccionado, setPaisSeleccionado] = useState('');
 	const [busquedaPais, setBusquedaPais] = useState('');
+
+	// Sección tengo
+	const [paisTengoSeleccionado, setPaisTengoSeleccionado] = useState('');
+	const [busquedaPaisTengo, setBusquedaPaisTengo] = useState('');
+
+	// Sección repetidos
 	const [nuevoRepetidoCodigo, setNuevoRepetidoCodigo] = useState('');
 	const [nuevoRepetidoNumero, setNuevoRepetidoNumero] = useState('');
 	const [mostrarAgregarRepetido, setMostrarAgregarRepetido] = useState(false);
 
 	useEffect(() => {
 		const guardados = localStorage.getItem('repetidos');
-		if (guardados) {
-			setRepetidos(JSON.parse(guardados));
-		} else {
-			setRepetidos(misRepetidosIniciales);
-		}
+		setRepetidos(guardados ? JSON.parse(guardados) : misRepetidosIniciales);
 
 		const guardadosFaltantes = localStorage.getItem('faltantes');
 		if (guardadosFaltantes) {
-			setFaltantes(JSON.parse(guardadosFaltantes));
+			const parsed: Record<string, number[]> = JSON.parse(guardadosFaltantes);
+			// Fusionar: agregar países nuevos que no estén en el localStorage guardado
+			const merged = { ...parsed };
+			for (const [pais, nums] of Object.entries(misFaltantesIniciales)) {
+				if (!merged[pais]) {
+					merged[pais] = nums;
+				}
+			}
+			setFaltantes(merged);
+			localStorage.setItem('faltantes', JSON.stringify(merged));
 		} else {
 			setFaltantes(misFaltantesIniciales);
+			localStorage.setItem('faltantes', JSON.stringify(misFaltantesIniciales));
 		}
 	}, []);
 
@@ -165,75 +181,46 @@ export default function AlbumIntercambio() {
 			setHasBuscado(false);
 			return;
 		}
-
 		const queryNorm = normalize(texto.trim());
 		setHasBuscado(true);
-
 		const matchNumerico = queryNorm.match(/([A-Z\s]+)[^0-9]*([0-9]+)/);
 		if (matchNumerico) {
 			const textoPais = matchNumerico[1].trim();
 			const numero = parseInt(matchNumerico[2]);
-			const encontrados = repetidos.filter(s => coincideConPais(s.codigo, textoPais) && s.numero === numero);
-			setResultadosBusqueda(encontrados);
+			setResultadosBusqueda(repetidos.filter(s => coincideConPais(s.codigo, textoPais) && s.numero === numero));
 			return;
 		}
-
-		const encontradosTexto = repetidos.filter(s =>
+		setResultadosBusqueda(repetidos.filter(s =>
 			coincideConPais(s.codigo, queryNorm) || s.numero.toString() === queryNorm
-		);
-		setResultadosBusqueda(encontradosTexto);
-	};
-
-	const handleBusquedaChange = (valor: string) => {
-		setBusqueda(valor);
-		buscarSticker(valor);
+		));
 	};
 
 	const intercambiar = (codigo: string, numero: number) => {
 		const sticker = repetidos.find(s => s.codigo === codigo && s.numero === numero);
 		if (!sticker) return;
-
 		const msg = sticker.cantidad > 1
 			? `¿Intercambiaste un ${codigo} #${numero}? Te quedarán ${sticker.cantidad - 1}.`
 			: `¿Intercambiaste tu último ${codigo} #${numero}? Se eliminará de tus repetidos.`;
-
-		if (window.confirm(msg)) {
-			let nuevos;
-			if (sticker.cantidad > 1) {
-				nuevos = repetidos.map(s =>
-					s.codigo === codigo && s.numero === numero
-						? { ...s, cantidad: s.cantidad - 1 }
-						: s
-				);
-				setResultadosBusqueda(prev =>
-					prev.map(s =>
-						s.codigo === codigo && s.numero === numero
-							? { ...s, cantidad: s.cantidad - 1 }
-							: s
-					)
-				);
-			} else {
-				nuevos = repetidos.filter(s => !(s.codigo === codigo && s.numero === numero));
-				setResultadosBusqueda(prev =>
-					prev.filter(s => !(s.codigo === codigo && s.numero === numero))
-				);
-			}
-			setRepetidos(nuevos);
-			localStorage.setItem('repetidos', JSON.stringify(nuevos));
+		if (!window.confirm(msg)) return;
+		let nuevos;
+		if (sticker.cantidad > 1) {
+			nuevos = repetidos.map(s => s.codigo === codigo && s.numero === numero ? { ...s, cantidad: s.cantidad - 1 } : s);
+			setResultadosBusqueda(prev => prev.map(s => s.codigo === codigo && s.numero === numero ? { ...s, cantidad: s.cantidad - 1 } : s));
+		} else {
+			nuevos = repetidos.filter(s => !(s.codigo === codigo && s.numero === numero));
+			setResultadosBusqueda(prev => prev.filter(s => !(s.codigo === codigo && s.numero === numero)));
 		}
+		setRepetidos(nuevos);
+		localStorage.setItem('repetidos', JSON.stringify(nuevos));
 	};
 
 	const ajustarCantidad = (codigo: string, numero: number, delta: number) => {
 		const idx = repetidos.findIndex(s => s.codigo === codigo && s.numero === numero);
 		if (idx === -1) return;
-		const sticker = repetidos[idx];
-		const newCant = sticker.cantidad + delta;
-		let nuevos;
-		if (newCant <= 0) {
-			nuevos = repetidos.filter((_, i) => i !== idx);
-		} else {
-			nuevos = repetidos.map((s, i) => i === idx ? { ...s, cantidad: newCant } : s);
-		}
+		const newCant = repetidos[idx].cantidad + delta;
+		const nuevos = newCant <= 0
+			? repetidos.filter((_, i) => i !== idx)
+			: repetidos.map((s, i) => i === idx ? { ...s, cantidad: newCant } : s);
 		setRepetidos(nuevos);
 		localStorage.setItem('repetidos', JSON.stringify(nuevos));
 	};
@@ -242,40 +229,48 @@ export default function AlbumIntercambio() {
 		const codigo = nuevoRepetidoCodigo.trim().toUpperCase();
 		const numero = parseInt(nuevoRepetidoNumero);
 		if (!codigo || isNaN(numero) || numero < 1) return;
-
 		const idx = repetidos.findIndex(s => s.codigo === codigo && s.numero === numero);
-		let nuevos;
-		if (idx !== -1) {
-			nuevos = repetidos.map((s, i) => i === idx ? { ...s, cantidad: s.cantidad + 1 } : s);
-		} else {
-			nuevos = [...repetidos, { codigo, numero, cantidad: 1 }];
-		}
+		const nuevos = idx !== -1
+			? repetidos.map((s, i) => i === idx ? { ...s, cantidad: s.cantidad + 1 } : s)
+			: [...repetidos, { codigo, numero, cantidad: 1 }];
 		setRepetidos(nuevos);
 		localStorage.setItem('repetidos', JSON.stringify(nuevos));
 		setNuevoRepetidoNumero('');
 	};
 
-	const marcarFaltanteComoConseguido = (pais: string, numero: number) => {
-		if (window.confirm(`¿Ya conseguiste ${pais} #${numero}? Se eliminará de tus faltantes.`)) {
-			const nuevosFaltantes = { ...faltantes };
-			nuevosFaltantes[pais] = nuevosFaltantes[pais].filter(n => n !== numero);
-			if (nuevosFaltantes[pais].length === 0) {
-				delete nuevosFaltantes[pais];
-			}
-			setFaltantes(nuevosFaltantes);
-			localStorage.setItem('faltantes', JSON.stringify(nuevosFaltantes));
-		}
+	const marcarComoConseguido = (pais: string, numero: number) => {
+		if (!window.confirm(`¿Ya conseguiste ${pais} #${numero}? Se eliminará de tus faltantes.`)) return;
+		const nuevosFaltantes = { ...faltantes };
+		nuevosFaltantes[pais] = nuevosFaltantes[pais].filter(n => n !== numero);
+		if (nuevosFaltantes[pais].length === 0) delete nuevosFaltantes[pais];
+		setFaltantes(nuevosFaltantes);
+		localStorage.setItem('faltantes', JSON.stringify(nuevosFaltantes));
 	};
 
+	const marcarComoFaltante = (pais: string, numero: number) => {
+		if (!window.confirm(`¿Marcar ${pais} #${numero} como faltante? Volverá a aparecer en tu lista de faltantes.`)) return;
+		const nuevosFaltantes = { ...faltantes };
+		if (!nuevosFaltantes[pais]) nuevosFaltantes[pais] = [];
+		if (!nuevosFaltantes[pais].includes(numero)) {
+			nuevosFaltantes[pais] = [...nuevosFaltantes[pais], numero].sort((a, b) => a - b);
+		}
+		setFaltantes(nuevosFaltantes);
+		localStorage.setItem('faltantes', JSON.stringify(nuevosFaltantes));
+	};
+
+	const getTengo = (pais: string) => {
+		const faltan = faltantes[pais] || [];
+		return Array.from({ length: TOTAL_POR_PAIS }, (_, i) => i + 1).filter(n => !faltan.includes(n));
+	};
+
+	// --- Computed ---
 	const repetidosAgrupados = repetidos.reduce((acc, sticker) => {
 		const key = `${sticker.codigo}-${sticker.numero}`;
-		if (!acc[key]) {
-			acc[key] = { ...sticker };
-		}
+		if (!acc[key]) acc[key] = { ...sticker };
 		return acc;
 	}, {} as Record<string, Sticker>);
-
 	const repetidosUnicos = Object.values(repetidosAgrupados);
+
 	const faltantesActuales = Object.values(faltantes).reduce((acc, nums) => acc + nums.length, 0);
 
 	const paisesFiltrados = Object.keys(faltantes).filter(pais => {
@@ -285,6 +280,15 @@ export default function AlbumIntercambio() {
 
 	const todosLosPaises = Object.keys(nombreDisplay).sort();
 
+	const paisesTengoFiltrados = todosLosPaises.filter(pais => {
+		const tengo = getTengo(pais);
+		if (tengo.length === 0) return false;
+		if (!busquedaPaisTengo.trim()) return true;
+		return coincideConPais(pais, normalize(busquedaPaisTengo));
+	});
+
+	const totalTengo = todosLosPaises.reduce((acc, pais) => acc + getTengo(pais).length, 0);
+
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-4">
 			<div className="max-w-6xl mx-auto">
@@ -292,18 +296,18 @@ export default function AlbumIntercambio() {
 					📋 Álbum Mundial - Intercambio
 				</h1>
 				<p className="text-center text-gray-600 mb-8">
-					Total repetidos: {repetidos.length} | Total faltantes: {faltantesActuales}
+					Tengo: {totalTengo} | Faltantes: {faltantesActuales} | Repetidos: {repetidos.length}
 				</p>
 
-				{/* Buscador rápido */}
+				{/* Buscador rápido de repetidos */}
 				<div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-					<h2 className="text-xl font-semibold mb-4">🔍 Buscar si tengo un número</h2>
+					<h2 className="text-xl font-semibold mb-4">🔍 Buscar si tengo un repetido</h2>
 					<div className="flex gap-2">
 						<input
 							type="text"
 							placeholder="Ej: MEX, México, MEX 20, Alemania 5, USA 11"
 							value={busqueda}
-							onChange={(e) => handleBusquedaChange(e.target.value)}
+							onChange={(e) => { setBusqueda(e.target.value); buscarSticker(e.target.value); }}
 							className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
 						/>
 						<button
@@ -331,13 +335,13 @@ export default function AlbumIntercambio() {
 					)}
 					{hasBuscado && resultadosBusqueda.length === 0 && (
 						<div className="mt-4 p-4 bg-red-100 rounded-lg">
-							<p>❌ No tengo {busqueda.toUpperCase()}</p>
+							<p>❌ No tengo {busqueda.toUpperCase()} como repetido</p>
 						</div>
 					)}
 				</div>
 
-				<div className="grid md:grid-cols-2 gap-8">
-					{/* Lista de repetidos */}
+				<div className="grid md:grid-cols-2 gap-8 mb-8">
+					{/* Mis Repetidos */}
 					<div className="bg-white rounded-lg shadow-lg p-6">
 						<div className="flex justify-between items-center mb-4">
 							<h2 className="text-xl font-semibold">📌 Mis Repetidos ({repetidos.length})</h2>
@@ -433,55 +437,43 @@ export default function AlbumIntercambio() {
 						</div>
 					</div>
 
-					{/* Lista de faltantes */}
+					{/* Lo que me falta */}
 					<div className="bg-white rounded-lg shadow-lg p-6">
 						<h2 className="text-xl font-semibold mb-4">❌ Lo que me falta ({faltantesActuales})</h2>
 
-						<div className="mb-3">
-							<input
-								type="text"
-								placeholder="Buscar país: MEX, México, Alemania, Egypt..."
-								value={busquedaPais}
-								onChange={(e) => {
-									setBusquedaPais(e.target.value);
-									setPaisSeleccionado('');
-								}}
-								className="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							/>
-						</div>
-
-						<div className="mb-4">
-							<select
-								value={paisSeleccionado}
-								onChange={(e) => setPaisSeleccionado(e.target.value)}
-								className="w-full p-2 border rounded-lg"
-							>
-								<option value="">
-									{paisesFiltrados.length === 0
-										? 'Sin resultados'
-										: `Seleccionar país... (${paisesFiltrados.length})`}
+						<input
+							type="text"
+							placeholder="Buscar: MEX, México, Alemania, Scotland..."
+							value={busquedaPais}
+							onChange={(e) => { setBusquedaPais(e.target.value); setPaisSeleccionado(''); }}
+							className="w-full p-2 border rounded-lg text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-red-400"
+						/>
+						<select
+							value={paisSeleccionado}
+							onChange={(e) => setPaisSeleccionado(e.target.value)}
+							className="w-full p-2 border rounded-lg mb-4"
+						>
+							<option value="">
+								{paisesFiltrados.length === 0 ? 'Sin resultados' : `Seleccionar país... (${paisesFiltrados.length})`}
+							</option>
+							{paisesFiltrados.map(pais => (
+								<option key={pais} value={pais}>
+									{pais} — {nombreDisplay[pais] || pais} ({faltantes[pais]?.length ?? 0} faltantes)
 								</option>
-								{paisesFiltrados.map(pais => (
-									<option key={pais} value={pais}>
-										{pais} — {nombreDisplay[pais] || pais} ({faltantes[pais]?.length ?? 0} faltantes)
-									</option>
-								))}
-							</select>
-						</div>
+							))}
+						</select>
 
 						{paisSeleccionado && faltantes[paisSeleccionado] && (
 							<div>
 								<h3 className="font-semibold text-lg mb-1">
 									{paisSeleccionado} — {nombreDisplay[paisSeleccionado] || paisSeleccionado}
 								</h3>
-								<p className="text-sm text-gray-500 mb-2">
-									{faltantes[paisSeleccionado].length} faltantes · Toca un número para marcarlo como conseguido
-								</p>
+								<p className="text-xs text-gray-500 mb-2">Toca un número para marcarlo como conseguido ✅</p>
 								<div className="flex flex-wrap gap-2">
 									{faltantes[paisSeleccionado].sort((a, b) => a - b).map(num => (
 										<button
 											key={num}
-											onClick={() => marcarFaltanteComoConseguido(paisSeleccionado, num)}
+											onClick={() => marcarComoConseguido(paisSeleccionado, num)}
 											className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm hover:bg-green-100 hover:text-green-800 transition cursor-pointer"
 										>
 											#{num}
@@ -493,7 +485,62 @@ export default function AlbumIntercambio() {
 					</div>
 				</div>
 
-				<div className="mt-8 text-center text-sm text-gray-500">
+				{/* Lo que tengo en el álbum */}
+				<div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+					<h2 className="text-xl font-semibold mb-1">✅ Lo que tengo en el álbum ({totalTengo})</h2>
+					<p className="text-xs text-gray-500 mb-4">Toca un número para marcarlo como faltante si te equivocaste</p>
+
+					<div className="grid md:grid-cols-2 gap-4 mb-4">
+						<input
+							type="text"
+							placeholder="Buscar: MEX, México, Alemania, Scotland..."
+							value={busquedaPaisTengo}
+							onChange={(e) => { setBusquedaPaisTengo(e.target.value); setPaisTengoSeleccionado(''); }}
+							className="w-full p-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+						/>
+						<select
+							value={paisTengoSeleccionado}
+							onChange={(e) => setPaisTengoSeleccionado(e.target.value)}
+							className="w-full p-2 border rounded-lg"
+						>
+							<option value="">
+								{paisesTengoFiltrados.length === 0 ? 'Sin resultados' : `Seleccionar país... (${paisesTengoFiltrados.length})`}
+							</option>
+							{paisesTengoFiltrados.map(pais => {
+								const tengo = getTengo(pais);
+								return (
+									<option key={pais} value={pais}>
+										{pais} — {nombreDisplay[pais] || pais} ({tengo.length} en álbum)
+									</option>
+								);
+							})}
+						</select>
+					</div>
+
+					{paisTengoSeleccionado && (
+						<div>
+							<h3 className="font-semibold text-lg mb-1">
+								{paisTengoSeleccionado} — {nombreDisplay[paisTengoSeleccionado] || paisTengoSeleccionado}
+							</h3>
+							<p className="text-xs text-gray-500 mb-2">
+								{getTengo(paisTengoSeleccionado).length} stickers en el álbum · Toca para marcar como faltante si fue un error
+							</p>
+							<div className="flex flex-wrap gap-2">
+								{getTengo(paisTengoSeleccionado).map(num => (
+									<button
+										key={num}
+										onClick={() => marcarComoFaltante(paisTengoSeleccionado, num)}
+										className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm hover:bg-red-100 hover:text-red-800 transition cursor-pointer"
+									>
+										#{num}
+									</button>
+								))}
+							</div>
+						</div>
+					)}
+				</div>
+
+				<div className="text-center text-sm text-gray-500">
 					<p>💡 Los cambios se guardan automáticamente en tu dispositivo</p>
 					<button
 						onClick={restaurarIniciales}
